@@ -1,0 +1,54 @@
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Hashed bundle assets are immutable; index.html must never be cached or a
+    # deploy keeps serving the old entry point.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    location = /index.html {
+        add_header Cache-Control "no-store";
+    }
+
+    # Tailing the gateway container's access log needs the docker CLI, which the
+    # dev server has and this container does not. Answer with the SSE error the
+    # Logs page already knows how to render rather than hanging.
+    location = /api/logs/stream {
+        default_type text/event-stream;
+        add_header Cache-Control "no-store";
+        return 200 "event: fatal\ndata: {\"message\":\"gateway log streaming needs the docker CLI and is only available from the Vite dev server - use the 'This browser' source instead\"}\n\n";
+    }
+
+    # OpenAI-compatible endpoints and the MCP endpoint.
+    location /api/gateway/ {
+        proxy_pass ${AIGW_URL}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header Connection "";
+        # Keep SSE streaming instead of buffering whole responses.
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+    }
+
+    # Admin server: /health and /metrics.
+    location /api/admin/ {
+        proxy_pass ${AIGW_ADMIN_URL}/;
+        proxy_set_header Host $proxy_host;
+        proxy_http_version 1.1;
+        proxy_read_timeout 60s;
+    }
+
+    # The app routes on the URL hash, so every path resolves to index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

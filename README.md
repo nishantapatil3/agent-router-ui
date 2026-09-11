@@ -6,7 +6,8 @@ A small React + Vite console for [Agent Router](https://github.com/theagentroute
 nav, white cards on a faint page, dense data tables with status pills, and
 horizontal "top N" bar lists.
 
-No container, no deploy step: it runs off the Vite dev server.
+Runs off the Vite dev server for development, or as a container (nginx serving
+the built bundle and proxying to the gateway) — see [Container](#container).
 
 ## Pages
 
@@ -46,6 +47,41 @@ Open <http://localhost:5173>.
 
 Other scripts: `npm run build` (typecheck + production bundle into `dist/`),
 `npm run preview`, `npm run typecheck`.
+
+## Container
+
+The `Dockerfile` builds the bundle with Node and serves it from nginx, which
+also reverse-proxies `/api/gateway` and `/api/admin` exactly as the dev server
+does — so the browser still never calls the CORS-less gateway directly. The
+upstreams are read at container start, so one image works against any gateway:
+
+Images are published to GitHub Container Registry by
+`.github/workflows/docker.yml` on every push to `main` (`latest` plus the commit
+sha) and on `v*` tags (`1.2.3`, `1.2`); pull requests build the image without
+publishing. Pull one with
+`docker pull ghcr.io/nishantapatil3/agent-router-ui:latest`, or build locally:
+
+```bash
+docker build -t agent-router-ui .
+docker run --rm -p 8080:8080 \
+  -e AIGW_URL=http://aigw:1975 \
+  -e AIGW_ADMIN_URL=http://aigw:1064 \
+  agent-router-ui
+```
+
+Open <http://localhost:8080>. Both variables default to `localhost`, which is
+only useful with `--network host`; on the gateway's Compose network use its
+service name as above. nginx resolves the upstream hostnames at startup, so the
+gateway must be resolvable (not necessarily up) when this container starts.
+
+Two differences from `npm run dev`:
+
+- The Logs page's **Gateway** source is unavailable — tailing the aigw
+  container's access log needs the docker CLI, which only the dev server has.
+  The **This browser** source works as usual.
+- The proxy targets shown on the Settings page are baked in at build time
+  (`--build-arg AIGW_URL=... --build-arg AIGW_ADMIN_URL=...` to match); they are
+  display-only and do not affect routing.
 
 ## How it talks to the gateway
 
