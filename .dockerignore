@@ -5,3 +5,4 @@ dist
 Dockerfile
 .dockerignore
 README.md
+docs
