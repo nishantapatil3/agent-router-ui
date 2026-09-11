@@ -9,7 +9,6 @@ import {
   updateSettings,
   type Theme,
 } from './settings'
-import { clearEntries, getEntries, subscribe as subscribeLog } from './store'
 import { Card, KeyValue, PageHeader, Pill } from './ui'
 
 const THEMES: { id: Theme; label: string; hint: string }[] = [
@@ -20,7 +19,6 @@ const THEMES: { id: Theme; label: string; hint: string }[] = [
 
 export function SettingsPage() {
   const settings = useSyncExternalStore(subscribeSettings, getSettings)
-  const entries = useSyncExternalStore(subscribeLog, getEntries)
   const [probe, setProbe] = useState<{ ok: boolean; text: string } | null>(null)
   const [probing, setProbing] = useState(false)
 
@@ -217,26 +215,6 @@ export function SettingsPage() {
               onChange={(e) => updateSettings({ usageRefreshSeconds: Number(e.target.value) })}
             />
           </label>
-          <label>
-            Log retention <span className="muted">(requests kept)</span>
-            <input
-              type="number"
-              min={1}
-              max={1000}
-              step={10}
-              value={settings.logLimit}
-              onChange={(e) => updateSettings({ logLimit: Number(e.target.value) })}
-            />
-          </label>
-        </div>
-        <div className="settings-row">
-          <span className="muted small">
-            {entries.length} request{entries.length === 1 ? '' : 's'} currently stored in this
-            browser.
-          </span>
-          <button className="btn ghost sm" onClick={() => clearEntries()} disabled={!entries.length}>
-            Clear request log
-          </button>
         </div>
       </Card>
     </div>

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { listModels, streamChat, type ChatMessage, type Model, type Usage } from './api'
-import { startEntry, updateEntry } from './store'
 import { getSettings } from './settings'
 import { Empty, PageHeader, Pill, shortModel } from './ui'
 
@@ -70,11 +69,6 @@ export function Playground() {
     const started = performance.now()
     let ttfb: number | undefined
     let text = ''
-    let usage: Usage | undefined
-
-    // Every playground request lands in the shared log, which is what the Logs
-    // page reads.
-    const entryId = startEntry({ model, tenantId, sessionId, messages, temperature, maxTokens })
 
     // The streamed assistant turn is always last, so updates patch it in place.
     const patchLast = (fn: (t: Turn) => Turn) =>
@@ -99,40 +93,16 @@ export function Playground() {
             text += delta
             patchLast((t) => ({ ...t, content: t.content + delta }))
           },
-          onUsage: (u) => {
-            usage = u
-            patchLast((t) => ({ ...t, usage: u }))
-          },
+          onUsage: (u) => patchLast((t) => ({ ...t, usage: u })),
         },
       )
       const ms = Math.round(performance.now() - started)
       patchLast((t) => ({ ...t, ms }))
-      updateEntry(entryId, {
-        status: 'success',
-        ms,
-        ttfbMs: ttfb,
-        usage,
-        response: {
-          model,
-          usage,
-          choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
-        },
-      })
     } catch (e) {
       const stopped = controller.signal.aborted
       const msg = stopped ? 'stopped' : (e as Error).message
       const ms = Math.round(performance.now() - started)
       patchLast((t) => ({ ...t, error: msg, ms }))
-      updateEntry(entryId, {
-        status: stopped ? 'stopped' : 'error',
-        ms,
-        ttfbMs: ttfb,
-        usage,
-        error: msg,
-        // Partial text is worth keeping — it is what the model produced before
-        // the stream broke.
-        response: text ? { partial: text } : undefined,
-      })
     } finally {
       setBusy(false)
       abortRef.current = null

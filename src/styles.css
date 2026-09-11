@@ -264,19 +264,6 @@ legend { padding: 0 6px; font-size: 10.5px; font-weight: 600; text-transform: up
 .toolbar .search { width: 340px; margin: 0; }
 .toolbar-count { margin-left: auto; }
 
-.segmented { display: flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
-.segmented button {
-  background: none;
-  border: 0;
-  padding: 5px 12px;
-  border-radius: 6px;
-  font: inherit;
-  font-size: 12.5px;
-  color: var(--muted);
-  cursor: pointer;
-}
-.segmented button:hover { color: var(--text); }
-.segmented button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 550; }
 
 /* ---------------------------------------------------------------- cards */
 
@@ -696,8 +683,5 @@ table.data.models-table .truncate { max-width: 340px; }
 /* The endpoint note follows the proxy-target grid; keep them apart. */
 .settings-page .kv + .settings-note { margin-top: 16px; margin-bottom: 0; }
 
-.feed-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--ok-fg); }
-.feed-dot.connecting { background: var(--warn-fg); }
-.feed-dot.error { background: var(--err-fg); }
 .toolbar .btn.sm { flex: none; }
 .empty-state .btn { margin-top: 10px; }

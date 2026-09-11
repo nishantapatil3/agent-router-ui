@@ -16,8 +16,6 @@ export type Settings = {
   sessionId: string
   /** Usage page poll interval, in seconds. 0 disables auto-refresh. */
   usageRefreshSeconds: number
-  /** How many requests the Logs page keeps. */
-  logLimit: number
 }
 
 export const DEFAULTS: Settings = {
@@ -30,7 +28,6 @@ export const DEFAULTS: Settings = {
   tenantId: 'tenant-1',
   sessionId: 'session-webui',
   usageRefreshSeconds: 5,
-  logLimit: 200,
 }
 
 /** Upstreams the dev server proxies to, baked in by vite.config.ts. */

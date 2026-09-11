@@ -18,15 +18,6 @@ server {
         add_header Cache-Control "no-store";
     }
 
-    # Tailing the gateway container's access log needs the docker CLI, which the
-    # dev server has and this container does not. Answer with the SSE error the
-    # Logs page already knows how to render rather than hanging.
-    location = /api/logs/stream {
-        default_type text/event-stream;
-        add_header Cache-Control "no-store";
-        return 200 "event: fatal\ndata: {\"message\":\"gateway log streaming needs the docker CLI and is only available from the Vite dev server - use the 'This browser' source instead\"}\n\n";
-    }
-
     # OpenAI-compatible endpoints and the MCP endpoint.
     location /api/gateway/ {
         proxy_pass ${AIGW_URL}/;

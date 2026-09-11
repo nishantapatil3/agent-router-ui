@@ -3,11 +3,10 @@ import { Playground } from './Playground'
 import { Models } from './Models'
 import { SettingsPage } from './SettingsPage'
 import { Usage } from './Usage'
-import { Logs } from './Logs'
 import { Tools } from './Tools'
 import { fetchHealth } from './api'
 
-type Page = 'playground' | 'models' | 'usage' | 'logs' | 'tools' | 'settings'
+type Page = 'playground' | 'models' | 'usage' | 'tools' | 'settings'
 
 type NavItem = { id: Page; label: string; icon: ReactNode }
 
@@ -40,8 +39,6 @@ const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       // bar chart
       { id: 'usage', label: 'Usage', icon: <Icon d="M2.5 13.5h11M4.5 13.5V8M8 13.5V3.5M11.5 13.5v-4" /> },
-      // list
-      { id: 'logs', label: 'Logs', icon: <Icon d="M5.5 4.5h8M5.5 8h8M5.5 11.5h8M2.5 4.5h.01M2.5 8h.01M2.5 11.5h.01" /> },
     ],
   },
   {
@@ -145,7 +142,6 @@ export function App() {
           {page === 'playground' && <Playground />}
           {page === 'models' && <Models />}
           {page === 'usage' && <Usage />}
-          {page === 'logs' && <Logs />}
           {page === 'tools' && <Tools />}
           {page === 'settings' && <SettingsPage />}
         </main>
