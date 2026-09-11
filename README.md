@@ -1,7 +1,5 @@
 # agent-router-ui
 
-![Agent Router UI — Usage page](docs/usage.png)
-
 A small React + Vite console for [Agent Router](https://github.com/theagentrouter/agent-router)
 (`aigw`). The layout and visual language borrow from
 [LiteLLM's admin UI](https://docs.litellm.ai/docs/proxy/ui) — grouped sidebar
@@ -10,6 +8,9 @@ horizontal "top N" bar lists.
 
 Runs off the Vite dev server for development, or as a container (nginx serving
 the built bundle and proxying to the gateway) — see [Container](#container).
+
+## Screenshot
+![Agent Router UI — Usage page](docs/usage.png)
 
 ## Pages
 
