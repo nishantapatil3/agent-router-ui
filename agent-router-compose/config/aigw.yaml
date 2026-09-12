@@ -1,0 +1,341 @@
+# Agent Router (aigw) standalone configuration.
+#
+# aigw applies envsubst to this entire file before use, so ${VAR} and
+# ${VAR:-default} are resolved from the container environment. See
+# docker-compose.yaml for which variables are passed in.
+#
+# Topology: client -> aigw :1975 -> LiteLLM (OpenAI-compatible) -> providers
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: aigw-run
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: aigw-run
+  namespace: default
+spec:
+  gatewayClassName: aigw-run
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 1975
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: envoy-ai-gateway
+---
+# Envoy tuning and structured access logs. The two access-log settings below
+# split LLM traffic from MCP traffic and emit the gen_ai.* / mcp.* fields that
+# make `docker compose logs aigw` useful.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: envoy-ai-gateway
+  namespace: default
+spec:
+  logging:
+    level:
+      default: error
+  telemetry:
+    accessLog:
+      settings:
+        - matches:
+            # MCP metadata only exists on backend-listener requests, which do not carry /mcp paths.
+            # Match LLM by x-ai-eg-model and MCP by x-ai-eg-mcp-backend.
+            - "request.headers['x-ai-eg-model'] != ''"
+          sinks:
+            - type: File
+              file:
+                path: /dev/stdout
+          format:
+            type: JSON
+            json:
+              # LLM specific fields. The dynamic metadata keys must match the
+              # AIGatewayRoute llmRequestCosts metadataKey values below, and the
+              # header-mapped attributes from OTEL_AIGW_REQUEST_HEADER_ATTRIBUTES.
+              gen_ai.request.model: "%REQ(X-AI-EG-MODEL)%"
+              gen_ai.response.model: "%DYNAMIC_METADATA(io.envoy.ai_gateway:response_model)%"
+              gen_ai.provider.name: "%DYNAMIC_METADATA(io.envoy.ai_gateway:backend_name)%"
+              gen_ai.usage.input_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_input_token)%"
+              gen_ai.usage.output_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_output_token)%"
+              gen_ai.usage.reasoning_tokens: "%DYNAMIC_METADATA(io.envoy.ai_gateway:llm_reasoning_token)%"
+              session.id: "%DYNAMIC_METADATA(io.envoy.ai_gateway:session.id)%"
+              tenant.id: "%REQ(X-TENANT-ID)%"
+              # Common fields
+              start_time: "%START_TIME%"
+              method: "%REQ(:METHOD)%"
+              request.path: "%REQ(:PATH)%"
+              x-envoy-origin-path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+              response_code: "%RESPONSE_CODE%"
+              connection_termination_details: "%CONNECTION_TERMINATION_DETAILS%"
+              upstream_transport_failure_reason: "%UPSTREAM_TRANSPORT_FAILURE_REASON%"
+              bytes_received: "%BYTES_RECEIVED%"
+              bytes_sent: "%BYTES_SENT%"
+              duration: "%DURATION%"
+              x-envoy-upstream-service-time: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+              x-forwarded-for: "%REQ(X-FORWARDED-FOR)%"
+              user-agent: "%REQ(USER-AGENT)%"
+              x-request-id: "%REQ(X-REQUEST-ID)%"
+              upstream_host: "%UPSTREAM_HOST%"
+              upstream_cluster: "%UPSTREAM_CLUSTER%"
+              upstream_local_address: "%UPSTREAM_LOCAL_ADDRESS%"
+              downstream_local_address: "%DOWNSTREAM_LOCAL_ADDRESS%"
+              downstream_remote_address: "%DOWNSTREAM_REMOTE_ADDRESS%"
+        - matches:
+            - "request.headers['x-ai-eg-mcp-backend'] != ''"
+          sinks:
+            - type: File
+              file:
+                path: /dev/stdout
+          format:
+            type: JSON
+            json:
+              # MCP specific fields
+              jsonrpc.request.id: "%DYNAMIC_METADATA(io.envoy.ai_gateway:mcp_request_id)%"
+              mcp.session.id: "%REQ(MCP-SESSION-ID)%"
+              mcp.method.name: "%DYNAMIC_METADATA(io.envoy.ai_gateway:mcp_method)%"
+              mcp.tool.name: "%DYNAMIC_METADATA(io.envoy.ai_gateway:mcp_tool_name)%"
+              session.id: "%DYNAMIC_METADATA(io.envoy.ai_gateway:session.id)%"
+              tenant.id: "%REQ(X-TENANT-ID)%"
+              mcp.provider.name: "%DYNAMIC_METADATA(io.envoy.ai_gateway:mcp_backend)%"
+              # Common fields
+              start_time: "%START_TIME%"
+              method: "%REQ(:METHOD)%"
+              request.path: "%REQ(:PATH)%"
+              x-envoy-origin-path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+              response_code: "%RESPONSE_CODE%"
+              connection_termination_details: "%CONNECTION_TERMINATION_DETAILS%"
+              upstream_transport_failure_reason: "%UPSTREAM_TRANSPORT_FAILURE_REASON%"
+              bytes_received: "%BYTES_RECEIVED%"
+              bytes_sent: "%BYTES_SENT%"
+              duration: "%DURATION%"
+              x-envoy-upstream-service-time: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+              x-forwarded-for: "%REQ(X-FORWARDED-FOR)%"
+              user-agent: "%REQ(USER-AGENT)%"
+              x-request-id: "%REQ(X-REQUEST-ID)%"
+              upstream_host: "%UPSTREAM_HOST%"
+              upstream_cluster: "%UPSTREAM_CLUSTER%"
+              upstream_local_address: "%UPSTREAM_LOCAL_ADDRESS%"
+              downstream_local_address: "%DOWNSTREAM_LOCAL_ADDRESS%"
+              downstream_remote_address: "%DOWNSTREAM_REMOTE_ADDRESS%"
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: AIGatewayRoute
+metadata:
+  name: aigw-run
+  namespace: default
+spec:
+  parentRefs:
+    - name: aigw-run
+      kind: Gateway
+      group: gateway.networking.k8s.io
+  rules:
+    # Declared models. Exact x-ai-eg-model matches are what populate the
+    # OpenAI-compatible /v1/models endpoint (a regex match advertises nothing),
+    # so listing them here is what lets clients such as agent-router-ui/ discover them.
+    # All of them route to the same LiteLLM backend.
+    - matches:
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: bedrock/global.anthropic.claude-opus-5
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: bedrock/global.anthropic.claude-sonnet-5
+        - headers:
+            - type: Exact
+              name: x-ai-eg-model
+              value: bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0
+      backendRefs:
+        - name: litellm
+          namespace: default
+      timeouts:
+        request: 120s
+      modelsOwnedBy: outshift
+      # Without this, /v1/models reports a zero timestamp.
+      modelsCreatedAt: "2026-09-11T00:00:00Z"
+    # Catch-all: any other model still reaches LiteLLM, which owns per-model
+    # routing. Undeclared models work, they just do not show up in /v1/models.
+    - matches:
+        - headers:
+            - type: RegularExpression
+              name: x-ai-eg-model
+              value: .*
+      backendRefs:
+        - name: litellm
+          namespace: default
+      timeouts:
+        request: 120s
+    # To split traffic at the gateway instead, add more specific rules ABOVE the
+    # catch-all (first match wins) and define the extra backends below, e.g.:
+    #
+    # - matches:
+    #     - headers:
+    #         - type: Exact
+    #           name: x-ai-eg-model
+    #           value: gpt-4o-mini
+    #   backendRefs:
+    #     - name: openai
+    #       namespace: default
+  # Exposes token counts as dynamic metadata, consumed by the access log above
+  # and by the /metrics endpoint.
+  llmRequestCosts:
+    - metadataKey: llm_input_token
+      type: InputToken
+    - metadataKey: llm_output_token
+      type: OutputToken
+    - metadataKey: llm_reasoning_token
+      type: ReasoningToken
+---
+# Where LiteLLM lives.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: litellm
+  namespace: default
+spec:
+  endpoints:
+    - fqdn:
+        hostname: ${LITELLM_HOST}
+        port: ${LITELLM_PORT:-443}
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: AIServiceBackend
+metadata:
+  name: litellm
+  namespace: default
+spec:
+  timeouts:
+    request: 3m
+  # LiteLLM speaks the OpenAI API, so no schema translation is needed.
+  schema:
+    name: OpenAI
+  backendRef:
+    name: litellm
+    kind: Backend
+    group: gateway.envoyproxy.io
+    namespace: default
+---
+# TLS to the LiteLLM endpoint, validated against the system CA bundle.
+# Comment this whole resource out (and set LITELLM_PORT accordingly) if your
+# LiteLLM is reached over plain HTTP, e.g. one running on the Docker host.
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: litellm-tls
+  namespace: default
+spec:
+  targetRefs:
+    - group: "gateway.envoyproxy.io"
+      kind: Backend
+      name: litellm
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: ${LITELLM_HOST}
+---
+# The LiteLLM virtual key. aigw replaces the client's Authorization header with
+# this on the way upstream, so callers never hold the LiteLLM key.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-apikey
+  namespace: default
+type: Opaque
+stringData:
+  apiKey: ${LITELLM_API_KEY}
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: BackendSecurityPolicy
+metadata:
+  name: litellm-apikey
+  namespace: default
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: litellm
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: litellm-apikey
+---
+# Envoy Gateway defaults the buffer limit to 32KiB, which is too small for AI
+# request bodies. Raise it.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: client-buffer-limit
+  namespace: default
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: aigw-run
+  connection:
+    bufferLimit: 50Mi
+---
+# MCP gateway. Aggregates the backends below behind a single /mcp endpoint,
+# exposing their tools namespaced as <backend>__<tool>.
+#
+# Note: the `--mcp-config` / `--mcp-json` CLI flags are ignored whenever an
+# explicit config file is passed to `aigw run`, so MCP servers have to be
+# declared here as MCPRoute backends.
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: MCPRoute
+metadata:
+  name: mcp-route
+  namespace: default
+spec:
+  parentRefs:
+    - name: aigw-run
+      kind: Gateway
+      group: gateway.networking.k8s.io
+  path: "/mcp"
+  backendRefs:
+    # Example public MCP server. Replace with your own; each entry needs a
+    # Backend (and a BackendTLSPolicy when it is HTTPS) below.
+    - name: kiwi
+      kind: Backend
+      group: gateway.envoyproxy.io
+      path: "/"
+      # Optionally narrow which tools are exposed:
+      # toolSelector:
+      #   includeRegex:
+      #     - .*search.*
+      # And attach credentials, using a Secret like the one above:
+      # securityPolicy:
+      #   apiKey:
+      #     secretRef:
+      #       name: my-mcp-token
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: kiwi
+  namespace: default
+spec:
+  endpoints:
+    - fqdn:
+        hostname: mcp.kiwi.com
+        port: 443
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: kiwi-tls
+  namespace: default
+spec:
+  targetRefs:
+    - group: "gateway.envoyproxy.io"
+      kind: Backend
+      name: kiwi
+  validation:
+    wellKnownCACertificates: "System"
+    hostname: mcp.kiwi.com

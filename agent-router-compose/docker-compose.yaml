@@ -1,0 +1,91 @@
+# Agent Router (aigw) standalone deployment, fronting an external
+# OpenAI-compatible LiteLLM endpoint, with Prometheus + Grafana.
+#
+#   cp .env.example .env    # then edit LITELLM_* values
+#   docker compose up -d --wait
+
+services:
+  # Agent Router CLI in standalone mode: it launches Envoy Gateway, Envoy and
+  # the ext_proc inside this one container. No Kubernetes involved.
+  aigw:
+    image: envoyproxy/ai-gateway-cli:${AIGW_VERSION:-latest}
+    container_name: aigw
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/aigw/aigw.yaml
+    environment:
+      # Substituted into config/aigw.yaml by aigw (envsubst over the whole file).
+      - LITELLM_HOST=${LITELLM_HOST:-host.docker.internal}
+      - LITELLM_PORT=${LITELLM_PORT:-4000}
+      - LITELLM_API_KEY=${LITELLM_API_KEY:-unused}
+      - AIGW_DEBUG=${AIGW_DEBUG:-false}
+      # Map a request header onto a telemetry attribute. tenant.id is low
+      # cardinality so it is safe on metrics as well as logs and traces.
+      - OTEL_AIGW_REQUEST_HEADER_ATTRIBUTES=x-tenant-id:tenant.id
+    volumes:
+      - ./config:/etc/aigw:ro
+    ports:
+      - "1975:1975" # OpenAI-compatible endpoints at /v1/*, MCP server at /mcp
+      - "1064:1064" # Admin server: /metrics (Prometheus) and /health
+    extra_hosts:
+      # Lets the gateway reach a LiteLLM running on the Docker host. The
+      # localhost:host-gateway trick upstream uses elsewhere does not work for
+      # aigw, so address the host as host.docker.internal.
+      - "host.docker.internal:host-gateway"
+    # The image ships its own HEALTHCHECK (aigw healthcheck -> :1064/health),
+    # which is what `--wait` and the depends_on conditions below key off.
+
+  # React + Vite console, served by nginx, which also reverse-proxies
+  # /api/gateway and /api/admin to aigw — the browser never calls the CORS-less
+  # gateway directly. Upstreams are read at container start, so the same image
+  # works against any gateway.
+  ui:
+    image: ghcr.io/nishantapatil3/agent-router-ui:${UI_VERSION:-latest}
+    container_name: aigw-ui
+    restart: unless-stopped
+    depends_on:
+      aigw:
+        condition: service_healthy
+    environment:
+      - AIGW_URL=http://aigw:1975
+      - AIGW_ADMIN_URL=http://aigw:1064
+    ports:
+      - "${UI_PORT:-8080}:8080"
+    # The image ships its own HEALTHCHECK (wget on :8080/).
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aigw-prometheus
+    restart: unless-stopped
+    depends_on:
+      aigw:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aigw-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+
+volumes:
+  prometheus-data:
+  grafana-data:

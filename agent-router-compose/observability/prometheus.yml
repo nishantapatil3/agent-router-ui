@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Agent Router admin server exposes Prometheus metrics on :1064/metrics.
+  - job_name: aigw
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["aigw:1064"]

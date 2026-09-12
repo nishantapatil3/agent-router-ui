@@ -1,0 +1,131 @@
+{
+  "title": "Agent Router",
+  "uid": "agent-router",
+  "tags": ["aigw"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Requests / sec",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "decimals": 2, "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gen_ai_server_request_duration_seconds_count[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Tokens / sec",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "decimals": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{gen_ai_token_type}}",
+          "expr": "sum(rate(gen_ai_client_token_usage_sum[5m])) by (gen_ai_token_type)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "p95 latency",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(gen_ai_server_request_duration_seconds_bucket[5m])) by (le))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Tokens total",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "decimals": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(gen_ai_client_token_usage_sum)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate by model",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{gen_ai_request_model}} ({{gen_ai_operation_name}})",
+          "expr": "sum(rate(gen_ai_server_request_duration_seconds_count[5m])) by (gen_ai_request_model, gen_ai_operation_name)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency quantiles",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 0 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "p50",
+          "expr": "histogram_quantile(0.5, sum(rate(gen_ai_server_request_duration_seconds_bucket[5m])) by (le))"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.95, sum(rate(gen_ai_server_request_duration_seconds_bucket[5m])) by (le))"
+        },
+        {
+          "refId": "C",
+          "legendFormat": "p99",
+          "expr": "histogram_quantile(0.99, sum(rate(gen_ai_server_request_duration_seconds_bucket[5m])) by (le))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Token throughput by type",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{gen_ai_token_type}}",
+          "expr": "sum(rate(gen_ai_client_token_usage_sum[5m])) by (gen_ai_token_type)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tokens by tenant (x-tenant-id)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "description": "Populated for requests carrying the x-tenant-id header, mapped to tenant.id via OTEL_AIGW_REQUEST_HEADER_ATTRIBUTES.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{tenant_id}}",
+          "expr": "sum(rate(gen_ai_client_token_usage_sum[5m])) by (tenant_id)"
+        }
+      ]
+    }
+  ]
+}
